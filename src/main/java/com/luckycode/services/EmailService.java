@@ -1,0 +1,449 @@
+package com.luckycode.services;
+
+import com.luckycode.exception.*;
+import com.luckycode.interfaces.PostReceiveHandler;
+import com.luckycode.model.InboxMail;
+import com.luckycode.model.MailConfig;
+import com.luckycode.model.MailContent;
+import com.luckycode.model.Result;
+import com.luckycode.utils.MessageUtil;
+import com.luckycode.utils.RegUtil;
+import com.luckycode.utils.StringUtil;
+import com.sun.mail.pop3.POP3Folder;
+
+import javax.activation.DataHandler;
+import javax.activation.DataSource;
+import javax.activation.FileDataSource;
+import javax.mail.*;
+import javax.mail.internet.*;
+import javax.mail.search.SearchException;
+import javax.mail.search.SearchTerm;
+import java.io.File;
+import java.io.IOException;
+import java.io.UnsupportedEncodingException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Properties;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * Created by Sean on 2018/08/23.
+ * 邮件发送服务
+ */
+public class EmailService {
+
+    private final static String RECIVE_PROTOCOL="pop3";
+
+    private final static String SEND_PROTOCOL="smtp";
+
+
+    private EmailService() {
+    }
+
+    private Properties props = new Properties();//邮件配置
+
+    private MailConfig config;
+
+
+    private final static ConcurrentHashMap<String, EmailService> senderList = new ConcurrentHashMap<>();
+
+    private void setProps(Properties props) {
+        this.props = props;
+    }
+
+    private void setConfig(MailConfig config) {
+        this.config = config;
+    }
+
+    /**
+     * 初始化邮件信息
+     *
+     * @param config 邮件信息配置
+     * @return 邮件发送服务类
+     */
+    public static EmailService getInstance(MailConfig config) {
+        EmailService sender = null;
+        if ((sender = senderList.get(config.hashCode())) != null) {
+            return sender;
+        } else {
+            Properties props = new Properties();
+            //配置POP3协议
+            if (config.isPop3()) {
+                props.setProperty("mail.store.protocol", RECIVE_PROTOCOL);        // 协议
+                props.setProperty("mail.pop3.port", config.getPop3Port() + "");                // 端口
+                props.setProperty("mail.pop3.host", config.getPop3Host());    // pop3服务器
+            }
+            //配置SMTP协议
+            if (config.isSmtp()) {
+                props.setProperty("mail.transport.protocol", SEND_PROTOCOL);
+                props.setProperty("mail.smtp.host", config.getSmtpHost());
+                props.setProperty("mail.smtp.port", config.getSmtpPort() + "'");
+            }
+            //配置是否开启调试模式
+            props.setProperty("mail.debug", Boolean.toString(config.isDebug()));
+            //开启认证
+            props.setProperty("mail.smtp.auth", "true");
+            EmailService emailSender = new EmailService();
+            emailSender.setProps(props);
+            emailSender.setConfig(config);
+            return emailSender;
+        }
+    }
+
+    /**
+     * 发送邮件内容
+     *
+     * @param mailContent 邮件实体类
+     */
+    public Result sendEmail(MailContent mailContent) {
+
+        Result result = new Result();
+
+
+        try {
+            result.setStatus(200);
+            validContent(mailContent);
+            buildAndSend(mailContent);
+        } catch (UnExpectContentException | UnknownProtocolException | MessBulidingException | MailConnectException | MailSendedException | UnExpectMailException e) {
+            result.setStatus(500);
+            result.setE(e);
+            result.setMsg(e.getMessage());
+        } catch (MessagingException e) {
+            result.setStatus(500);
+            result.setE(e);
+            result.setMsg(e.getMessage());
+        }
+        return result;
+
+
+    }
+
+    public void receiveEmail(SearchTerm mailFilter, PostReceiveHandler handler) {
+
+
+        Result result = new Result();
+
+
+        Message[] messages= new Message[0];
+        try {
+            messages= reciveEmali(mailFilter);
+
+        } catch (UnknownProtocolException| MailConnectException |UnknownMailResourceException |SearchException e) {
+            result.setStatus(500);
+            result.setE(e);
+            result.setMsg(e.getMessage());
+            return;
+        }
+
+        List<InboxMail> maillist = null;
+        try {
+            maillist = parseMessage(messages);
+        } catch (IOException e) {
+            result.setStatus(500);
+            result.setE(e);
+            result.setMsg(e.getMessage());
+            return ;
+        } catch (MessagingException e) {
+            result.setStatus(500);
+            result.setE(e);
+            result.setMsg(e.getMessage());
+            return ;
+        }
+
+        result.setStatus(200);
+//        handler.process(result,maillist);
+        final   List<InboxMail> resultMailList=maillist;
+        new Thread(()-> {handler.process(result, resultMailList);}).start();
+
+
+    }
+
+    private Message[] reciveEmali(SearchTerm mailFilter) throws UnknownProtocolException, MailConnectException, UnknownMailResourceException, SearchException {
+        // 创建Session实例对象
+        Session session = Session.getInstance(props);
+
+        Store store = null;
+        try {
+            store = session.getStore(RECIVE_PROTOCOL);
+        } catch (NoSuchProviderException e) {
+            throw new UnknownProtocolException();
+        }
+        try {
+            store.connect(config.getUserName(), config.getPassword());
+        } catch (MessagingException e) {
+           throw  new MailConnectException();
+        }
+        POP3Folder folder = null;
+
+
+        try {
+            // 获得收件箱
+            folder = (POP3Folder)store.getFolder("INBOX");
+            /* Folder.READ_ONLY：只读权限
+             * Folder.READ_WRITE：可读可写（可以修改邮件的状态）
+             */
+            folder.open(Folder.READ_WRITE);	//打开收件箱
+        } catch (MessagingException e) {
+            throw new UnknownMailResourceException();
+        }
+
+        Message[] messages= new Message[0];
+        try {
+            if (null==mailFilter){
+//                messages=folder.getMessages();
+                messages=folder.getMessages(folder.getMessageCount()-config.getCacheCount()+1,folder.getMessageCount());
+            }else {
+                messages = folder.search(mailFilter,folder.getMessages(folder.getMessageCount()-config.getCacheCount()+1,folder.getMessageCount()));
+
+            }
+        } catch (MessagingException e) {
+            throw  new SearchException();
+        }
+
+        return messages;
+    }
+
+    /**
+     * 解析邮件
+     * @param messages 要解析的邮件列表
+     */
+    public  List<InboxMail>  parseMessage(Message[] messages) throws IOException, MessagingException {
+        List<InboxMail> maillist = new ArrayList<>();
+        // 解析所有邮件
+        for (int i = 0, count = messages.length; i < count; i++) {
+            MimeMessage msg = (MimeMessage) messages[i];
+            InboxMail mail=new InboxMail();
+            mail.setSubject(MessageUtil.getSubject(msg));
+            mail.setFrom(MessageUtil.getFromAddress(msg));
+            mail.setFromName(MessageUtil.getFromName(msg));
+            mail.setReceiveDate(msg.getReceivedDate());
+            mail.setSeen(msg.getFlags().contains(Flags.Flag.SEEN));
+            boolean isContainerAttachment=MessageUtil.isContainAttachment(msg);
+            mail.setAttach(isContainerAttachment);
+            StringBuffer content = new StringBuffer();
+            MessageUtil.getMailTextContent(msg, content);
+            mail.setContent(content.toString());
+            if (isContainerAttachment) {
+                mail.setFileMap(MessageUtil.saveAttachment(msg)); //保存附件
+            }
+            maillist.add(mail);
+        }
+        return maillist;
+    }
+
+    /**
+     * 校验发送的邮件内容
+     *
+     * @param mailContent 邮件内容实体类
+     * @throws UnExpectContentException 非法邮件内容异常
+     * @throws UnExpectMailException    非法邮件地址异常
+     */
+    private void validContent(MailContent mailContent) throws UnExpectContentException, UnExpectMailException {
+
+        if (mailContent == null) {
+            throw new UnExpectContentException();
+        }
+
+        if (!validEmail(mailContent)) {
+            throw new UnExpectMailException();
+        }
+    }
+
+    /**
+     * 判断邮件内容中邮件地址是否合格
+     *
+     * @param mailContent 邮件内容
+     * @return 是否符合合格
+     */
+    private boolean validEmail(MailContent mailContent) {
+
+        //收件人地址判断，不符合规格直接返回
+        if (!validEmailList(mailContent.getTo())) {
+            return false;
+        }
+
+        //抄送人邮件地址判断
+        if (mailContent.getCcTo().size() != 0) {
+            if (!validEmailList(mailContent.getCcTo())) {
+                return false;
+            }
+        }
+
+        //秘密抄送人邮件地址判断
+        if (mailContent.getBccTo().size() != 0) {
+            return validEmailList(mailContent.getBccTo());
+        }
+
+        return true;
+    }
+
+    private boolean validEmailList(List<String> mailList) {
+        if (mailList.size() > 0) {
+            for (String mail : mailList) {
+                if (!RegUtil.vaildEmail(mail)) {
+                    return false;
+                }
+            }
+        } else {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * 构造发送内容并发送
+     * 邮件发送主要业务逻辑类
+     *
+     * @param mailContent 邮件内容实体
+     */
+    private void buildAndSend(MailContent mailContent) throws MessBulidingException, UnknownProtocolException, MailConnectException, MailSendedException, MessagingException {
+
+        // 创建Session实例对象
+        Session session = Session.getInstance(props);
+
+        // 创建MimeMessage实例对象
+        MimeMessage message = new MimeMessage(session);
+
+        try {
+            message = buildMailBody(message, mailContent);
+        } catch (MessagingException e) {
+            throw new MessBulidingException();
+        }
+
+        // 获得Transport实例对象
+        Transport transport = null;
+        try {
+            transport = session.getTransport();
+        } catch (NoSuchProviderException e) {
+            //协议异常
+            throw new UnknownProtocolException();
+        }
+
+        // 打开连接
+        try {
+            transport.connect(this.config.getUserName(), this.config.getPassword());
+        } catch (MessagingException e) {
+            //连接异常
+            throw new MailConnectException();
+        }
+
+        // 将message对象传递给transport对象，将邮件发送出去
+        try {
+            transport.sendMessage(message, message.getAllRecipients());
+        } catch (SendFailedException sfe) {
+            //发送失败
+            throw new MailSendedException();
+        } catch (MessagingException e) {
+            //发送失败
+            throw e;
+        }
+
+        // 关闭连接
+        try {
+            transport.close();
+        } catch (MessagingException e) {
+            //关闭连接失败
+            throw e;
+        }
+
+    }
+
+    private MimeMessage buildMailBody(MimeMessage message, MailContent mailContent) throws MessagingException {
+        try {
+
+            String charset = "utf-8";    // 指定中文编码格式
+
+            // 设置主题
+            message.setSubject(mailContent.getSubject());
+            // 设置发送人
+            message.setFrom(new InternetAddress(this.config.getUserName(), this.config.getUserName(), charset));
+
+            // InternetAddress参数：参数1：邮箱地址，参数2：姓名（在客户端收件只显示姓名，而不显示邮件地址），参数3：姓名中文字符串编码
+            InternetAddress[] toEmailAddress = getMailAddress(mailContent.getTo());
+
+            // 设置收件人
+            message.setRecipients(MimeMessage.RecipientType.TO, toEmailAddress);
+
+            // 设置抄送
+            if (mailContent.getCcTo().size() > 0) {
+                InternetAddress[] ccToEmailAddress = getMailAddress(mailContent.getCcTo());
+                message.setRecipients(MimeMessage.RecipientType.CC, ccToEmailAddress);
+            }
+
+            // 设置密送
+            if (mailContent.getBccTo().size() > 0) {
+                InternetAddress[] bccToEmailAddress = getMailAddress(mailContent.getBccTo());
+                message.setRecipients(MimeMessage.RecipientType.BCC, bccToEmailAddress);
+
+            }
+
+            // 设置发送时间
+            message.setSentDate(mailContent.getSendDate());
+
+            // 设置回复人(收件人回复此邮件时,默认收件人)
+//        message.setReplyTo(InternetAddress.parse("\"" + MimeUtility.encodeText("田七") + "\" <417067629@qq.com>"));
+
+            // 设置优先级(1:紧急	3:普通	5:低)
+            message.setHeader("X-Priority", "1");
+
+            // 要求阅读回执(收件人阅读邮件时会提示回复发件人,表明邮件已收到,并已阅读)
+            //message.setHeader("Disposition-Notification-To", from);
+
+            // 创建一个MIME子类型为"mixed"的MimeMultipart对象，表示这是一封混合组合类型的邮件
+            MimeMultipart mail = new MimeMultipart("mixed");
+            message.setContent(mail);
+
+            // 内容
+            MimeBodyPart mailBody = new MimeBodyPart();
+
+            // 邮件正文组合体
+            MimeMultipart bodyContent = new MimeMultipart("related");    //邮件正文也是一个组合体,需要指明组合关系
+
+            //邮件正文部分，支持非html和html两种
+            if (!StringUtil.isNullOrEmpty(mailContent.getContent())) {
+                MimeBodyPart htmlPart = new MimeBodyPart();
+                //html邮件内容
+                MimeMultipart htmlMultipart = new MimeMultipart("alternative");
+                MimeBodyPart htmlContent = new MimeBodyPart();
+                htmlContent.setContent(mailContent.getContent(), "text/html;charset=" + charset);
+                htmlMultipart.addBodyPart(htmlContent);
+                htmlPart.setContent(htmlMultipart);
+                bodyContent.addBodyPart(htmlPart);
+            }
+
+            //附件部分
+            if (mailContent.getFileList().size() > 0) {
+                for (File attachFile : mailContent.getFileList()) {
+                    MimeBodyPart attach = new MimeBodyPart();
+                    DataSource attachDataSource = new FileDataSource(attachFile);
+                    DataHandler attachDataHandler = new DataHandler(attachDataSource);
+                    attach.setFileName(MimeUtility.encodeText(attachFile.getName()));
+                    attach.setDataHandler(attachDataHandler);
+                    bodyContent.addBodyPart(attach);
+                }
+            }
+            mailBody.setContent(bodyContent);
+            mail.addBodyPart(mailBody);
+            message.setContent(mail);
+            // 保存邮件内容修改
+            message.saveChanges();
+            return message;
+        } catch (UnsupportedEncodingException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+
+    private InternetAddress[] getMailAddress(List<String> mailList) throws AddressException {
+        InternetAddress[] addresses = new InternetAddress[mailList.size()];
+        for (int i = 0; i < mailList.size(); i++) {
+            addresses[i] = new InternetAddress(mailList.get(i));
+        }
+        return addresses;
+    }
+
+
+
+
+}
