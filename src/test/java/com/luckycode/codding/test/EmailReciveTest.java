@@ -7,6 +7,7 @@ import com.luckycode.search.OrSearchTermBulider;
 import com.luckycode.search.SearchType;
 import com.luckycode.services.IMAPService;
 import com.luckycode.services.POP3Service;
+import com.luckycode.model.Result;
 import org.junit.Assert;
 import org.junit.Test;
 

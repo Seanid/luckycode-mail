@@ -19,7 +19,7 @@ import java.util.Properties;
 /**
  * Created by Sean on 2018/09/04.
  */
-public class POP3Service extends ReciveEmailService{
+public class POP3Service extends ReciveEmailService {
 
 
     public static POP3Service getInstance(MailConfig config) throws UnknownProtocolException {
@@ -32,7 +32,7 @@ public class POP3Service extends ReciveEmailService{
             props.setProperty("mail.store.protocol", RECIVE_PROTOCOL);        // 协议
             props.setProperty("mail.pop3.port", config.getPop3Port() + "");                // 端口
             props.setProperty("mail.pop3.host", config.getPop3Host());    // pop3服务器
-        }else {
+        } else {
             throw new UnknownProtocolException();
         }
         //配置是否开启调试模式

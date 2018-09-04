@@ -21,11 +21,12 @@ import java.util.List;
  * SMTP 发送服务类
  * 单一职责化
  */
-public class SMTPService extends EmailService{
+public class SMTPService extends EmailService {
 
-    private SMTPService(){}
+    private SMTPService() {
+    }
 
-    private final static String SEND_PROTOCOL="smtp";
+    private final static String SEND_PROTOCOL = "smtp";
 
     public static SMTPService getInstance(MailConfig config) throws UnknownProtocolException {
 
@@ -34,7 +35,7 @@ public class SMTPService extends EmailService{
             props.setProperty("mail.transport.protocol", SEND_PROTOCOL);
             props.setProperty("mail.smtp.host", config.getSmtpHost());
             props.setProperty("mail.smtp.port", config.getSmtpPort() + "'");
-        }else {
+        } else {
             throw new UnknownProtocolException();
         }
         //配置是否开启调试模式
@@ -124,6 +125,7 @@ public class SMTPService extends EmailService{
 
     /**
      * 判断邮件是否合格
+     *
      * @param mailList
      * @return
      */
@@ -200,9 +202,10 @@ public class SMTPService extends EmailService{
 
     /**
      * 构建邮件内容体报文
-     * @param message   信息体
-     * @param mailContent   封装邮件内容
-     * @return  返回内容体
+     *
+     * @param message     信息体
+     * @param mailContent 封装邮件内容
+     * @return 返回内容体
      * @throws MessagingException
      */
     private MimeMessage buildMailBody(MimeMessage message, MailContent mailContent) throws MessagingException {
@@ -294,6 +297,7 @@ public class SMTPService extends EmailService{
 
     /**
      * 获取邮件地址数组
+     *
      * @param mailList
      * @return
      * @throws AddressException
@@ -305,7 +309,6 @@ public class SMTPService extends EmailService{
         }
         return addresses;
     }
-
 
 
 }

@@ -1,10 +1,20 @@
+<<<<<<< HEAD
 codding
 .idea
 target
 
 
+=======
+.idea
+target
+
+>>>>>>> b0673afd605cfd49668a30683bdf658f0efeda8c
 # Editor directories and files
 .idea
 .vscode
 *.class
+<<<<<<< HEAD
 *.iml
+=======
+*.iml
+>>>>>>> b0673afd605cfd49668a30683bdf658f0efeda8c

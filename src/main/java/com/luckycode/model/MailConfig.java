@@ -20,6 +20,7 @@ public class MailConfig {
 
     private String imapHost;//imap域名
 
+
     private String userName;//认证邮件名
 
     private String password;//认证邮件密码
@@ -34,7 +35,6 @@ public class MailConfig {
     private  boolean isImap=false;//是否开启imap服务
 
     private int cacheCount=20;//默认搜索最近的20个邮件
-
 
 
 
@@ -78,6 +78,7 @@ public class MailConfig {
     public void setImap(boolean imap) {
         isImap = imap;
     }
+
 
     private void setUserName(String userName) {
         this.userName = userName;

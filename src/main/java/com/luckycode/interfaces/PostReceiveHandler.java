@@ -13,4 +13,5 @@ import java.util.List;
 public interface PostReceiveHandler {
     void process(Result result, List<InboxMail> mailList) ;
 
+
 }

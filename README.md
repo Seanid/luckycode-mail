@@ -38,10 +38,12 @@
     </dependency>
 ```
 
+
 ## Example
 
 发送邮件
 ```
+<<<<<<< HEAD
     MailConfig mailConfig=new MailConfig.Builder("demo@126.com","demo").setSMTPInfo(25,"smtp.126.com").setDebug(true).build();
     SMTPService sender= SMTPService.getInstance(mailConfig);
     MailContent mailContent=new MailContent.Builder("demo@qq.com","来自sean的问候","你好，hello world~~").build();
@@ -101,6 +103,6 @@ IMAP搜索邮件
 * coremail ： 支持获取自定义文件夹，无需授权
 
 
-
 ---
+
 维护邮箱:hxy9104@gmail.com
