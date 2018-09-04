@@ -43,7 +43,6 @@
 
 发送邮件
 ```
-<<<<<<< HEAD
     MailConfig mailConfig=new MailConfig.Builder("demo@126.com","demo").setSMTPInfo(25,"smtp.126.com").setDebug(true).build();
     SMTPService sender= SMTPService.getInstance(mailConfig);
     MailContent mailContent=new MailContent.Builder("demo@qq.com","来自sean的问候","你好，hello world~~").build();
